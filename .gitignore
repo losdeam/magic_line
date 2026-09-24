@@ -1,0 +1,3 @@
+# Agent 运行产物（抓帧截图与自检报告），不入库
+.agent/vision/
+.agent/test-results/
