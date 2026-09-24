@@ -1,6 +1,7 @@
 // 方块类型注册表：纯数据定义（id、颜色、标识文字、是否可放置、效果规则列表）。
 // 新增方块类型只需在 List 里加一条，控件与执行器无需改动。
 
+import { Config } from 'game/Config';
 import { EffectKind, EffectRule, EffectTarget, makeRule } from 'game/Effects';
 
 /** 一种方块的数据定义（无行为函数，全部为可读数据）。 */
@@ -32,7 +33,12 @@ export class BlockDefs {
 			placeable: true,
 			rules: [
 				makeRule(EffectKind.PhysicalDamage, EffectTarget.CurrentEnemy, 4, 3),
-				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3),
+				// 阶段解锁（共鸣 6-7）：额外破甲 1 层
+				makeRule(EffectKind.DebuffArmor, EffectTarget.CurrentEnemy, 1, 0, 6),
+				// 阶段解锁（超载 8+）：物伤溅射到全体敌人
+				makeRule(EffectKind.PhysicalDamage, EffectTarget.AllEnemies, 2, 1, 8),
+				// 魔力按原值产出，不受档位倍率影响（scaled = false）
+				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3, Config.MinChainLength, 0, false),
 			],
 		},
 		{
@@ -42,7 +48,11 @@ export class BlockDefs {
 			placeable: true,
 			rules: [
 				makeRule(EffectKind.MagicDamage, EffectTarget.CurrentEnemy, 3, 3),
-				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3),
+				// 阶段解锁（共鸣 6-7）：法术溅射到全体敌人
+				makeRule(EffectKind.MagicDamage, EffectTarget.AllEnemies, 1, 1, 6),
+				// 阶段解锁（超载 8+）：自身增伤 1 层
+				makeRule(EffectKind.BuffDamage, EffectTarget.Self, 1, 0, 8),
+				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3, Config.MinChainLength, 0, false),
 			],
 		},
 		{
@@ -51,11 +61,13 @@ export class BlockDefs {
 			glyph: '状',
 			placeable: true,
 			rules: [
-				// 层数 = floor(n / 2)，n ≥ 3 时至少为 1
-				makeRule(EffectKind.BuffDamage, EffectTarget.Self, 0, 0.5, 3, 1),
-				// n ≥ 5 额外给当前敌人挂破甲
-				makeRule(EffectKind.DebuffArmor, EffectTarget.CurrentEnemy, 1, 0, 5, 0),
-				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3),
+				// 层数 = floor(n / 2)，链长 2 时即为 1 层
+				makeRule(EffectKind.BuffDamage, EffectTarget.Self, 0, 0.5, Config.MinChainLength, 1),
+				// 阶段解锁（连击 4-5）：额外给当前敌人挂破甲 1 层
+				makeRule(EffectKind.DebuffArmor, EffectTarget.CurrentEnemy, 1, 0, 4, 0),
+				// 阶段解锁（超载 8+）：额外增伤 1 层
+				makeRule(EffectKind.BuffDamage, EffectTarget.Self, 1, 0, 8),
+				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3, Config.MinChainLength, 0, false),
 			],
 		},
 		{
@@ -65,9 +77,11 @@ export class BlockDefs {
 			placeable: true,
 			rules: [
 				makeRule(EffectKind.Heal, EffectTarget.Self, 3, 2),
-				// n ≥ 5 额外净化玩家 1 个减益
-				makeRule(EffectKind.Dispel, EffectTarget.Self, 1, 0, 5, 0),
-				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3),
+				// 阶段解锁（连击 4-5）：额外净化玩家 1 个减益
+				makeRule(EffectKind.Dispel, EffectTarget.Self, 1, 0, 4, 0),
+				// 阶段解锁（超载 8+）：附带护盾
+				makeRule(EffectKind.Shield, EffectTarget.Self, 2, 1, 8),
+				makeRule(EffectKind.ManaGain, EffectTarget.Self, 1, 3, Config.MinChainLength, 0, false),
 			],
 		},
 		{

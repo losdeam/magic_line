@@ -10,7 +10,7 @@
 
 - 构建：`build paths=['game','tests','init.ts']`；逐文件看 `messages`。若报 “TypeScript transpiler is not ready”，直接重试（服务未就绪，非代码错误）。仅改 `game/` 时可先 `build paths=['game']` 快速拿诊断（本轮 14/14 通过）。
 - 运行时自检：`tests/Entry.ts` 为 Agent 自检入口，把报告写到项目根 `.agent/test-results/m3.txt`，首行为 passed/failed。
-- Git：仓库无历史时由用户要求做了初始提交 `c744003`（init.ts/init.lua + `game/**` 与 `tests/**` 的 TS 源与生成 Lua，共 34 文件）。`.agent/**`（记忆/计划文档、test-results、vision 抓帧 PNG）有意未入库；无 `.gitignore`。仅支持单命令 Git（不支持 `git log --oneline`）。
+- Git：两次提交 —— `c744003` 初始提交（init.ts/init.lua + `game/**` 与 `tests/**` 的 TS 源与生成 Lua，共 34 文件）+ `4d525b9` 补 Agent 文档（`.agent/AGENT.md`、`plan/`、`main/`）。新增 `.gitignore` 忽略 `.agent/vision/` 与 `.agent/test-results/`。**`.agent/main/SESSION.jsonl` 是引擎每轮追加的会话尾巴，会长期显示 worktree M，属预期、非代码改动。** 仅支持单命令 Git（不支持 `git log --oneline`）。
   - 命令侧：`enterEntryAsync({fileName='tests/Entry.ts'})` → 轮询 `Content:exist(".agent/test-results/m3.txt")` 且内容变化 → `stopEntry()`。**轮询文件名必须是 `m3.txt`**（曾误用 `m4.txt` 导致 fresh=false/MISSING）。
   - **命令沙箱的 Content 只支持项目相对路径字符串**（`Content:exist(".agent/test-results/m3.txt")`）；用 `Path(projectDir, ...)` 拼绝对路径会报 `Content path must stay inside projectDir`。沙箱**无 mkdir/remove/写**（`Content:remove` 报 nil），所以目录与文件必须由 TS 入口自己在引擎内创建（`Content.save(Path(Content.searchPaths[0], ...))`），命令侧用「先读旧内容 → 轮询内容变化」判定新报告。
   - 报告带 `runTime=` 行，用于区分旧报告文件。

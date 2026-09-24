@@ -6,6 +6,7 @@ import { App, Content, Director, Node, Path, Size, Vec2 } from 'Dora';
 import { Board } from 'game/Board';
 import { BlockDefs } from 'game/BlockDefs';
 import { BoardView } from 'game/BoardView';
+import { ChainTiers } from 'game/ChainTiers';
 import { Combat } from 'game/Combat';
 import { Config, Difficulty, GameMode } from 'game/Config';
 import { EffectKind, EffectTarget, formatEffects, resolveEffects } from 'game/Effects';
@@ -82,8 +83,10 @@ function runViewChecks(): string {
 		const first = result.specs[0];
 		expect(first.kind === EffectKind.PhysicalDamage, '物理方块应产出 physicalDamage');
 		expect(first.target === EffectTarget.CurrentEnemy, '物理伤害应作用于当前敌人');
-		expect(first.value === 16, '物理伤害 4+3×4 应为 16，实际 ' + first.value);
-		expect(formatEffects(result.specs).indexOf('物理伤害 16') === 0, '效果文本应为“物理伤害 16 …”，实际 ' + formatEffects(result.specs));
+		// M9 分阶段强化：链长 4 落在连击档，数值 = round((4+3×4) × 连击档倍率)。
+		const expectedDamage = Math.round((4 + 3 * 4) * ChainTiers.multiplierOf(4));
+		expect(first.value === expectedDamage, '物理伤害 4+3×4 乘连击档倍率应为 ' + expectedDamage + '，实际 ' + first.value);
+		expect(formatEffects(result.specs).indexOf('物理伤害 ' + expectedDamage) === 0, '效果文本应为“物理伤害 ' + expectedDamage + ' …”，实际 ' + formatEffects(result.specs));
 	}
 
 	// 链长下限为 2：两格连线即可生效

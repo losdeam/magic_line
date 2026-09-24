@@ -1,6 +1,7 @@
 // 效果模型：一次连线的结算产物是效果列表 [{kind, value, target}]。
 // 注意：持续回合等时间性质不进入三元组，统一放在 Config 的持续时间表里。
 
+import { ChainTiers } from 'game/ChainTiers';
 import { Config } from 'game/Config';
 
 /** 执行效果的种类。新增效果种类 = 注册一条 handler（本直文件只列枚举）。 */
@@ -46,11 +47,13 @@ export interface EffectRule {
 	minChain: number;
 	/** 取整粒度：0 = 四舍五入；>0 = 向下取整到该粒度。 */
 	floorTo: number;
+	/** 是否受链长档位数值倍率（game/ChainTiers.ts）影响；false 表示按原值产出（如魔力）。 */
+	scaled: boolean;
 }
 
 /** 构造一条效果规则，避免各处重复写全字段。 */
-export function makeRule(kind: EffectKind, target: EffectTarget, base: number, perBlock: number, minChain: number = Config.MinChainLength, floorTo: number = 0): EffectRule {
-	return { kind, target, base, perBlock, minChain, floorTo };
+export function makeRule(kind: EffectKind, target: EffectTarget, base: number, perBlock: number, minChain: number = Config.MinChainLength, floorTo: number = 0, scaled: boolean = true): EffectRule {
+	return { kind, target, base, perBlock, minChain, floorTo, scaled };
 }
 
 /** 按取整粒度把原始数值归整。 */
@@ -70,11 +73,16 @@ export function resolveEffects(rules: EffectRule[], chainLength: number): Effect
 	if (chainLength < Config.MinChainLength) {
 		return specs;
 	}
+	// 分阶段强化：先取链长所在档位的数值倍率，再逐条按“是否受倍率影响”展开数值。
+	const tierMultiplier = ChainTiers.multiplierOf(chainLength);
 	for (const rule of rules) {
 		if (chainLength < rule.minChain) {
 			continue;
 		}
-		const raw = rule.base + rule.perBlock * chainLength;
+		let raw = rule.base + rule.perBlock * chainLength;
+		if (rule.scaled) {
+			raw *= tierMultiplier;
+		}
 		specs.push({ kind: rule.kind, value: roundRuleValue(raw, rule.floorTo), target: rule.target });
 	}
 	return specs;

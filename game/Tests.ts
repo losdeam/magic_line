@@ -4,8 +4,10 @@
 import { Content } from 'Dora';
 import { Board } from 'game/Board';
 import { BlockDefs } from 'game/BlockDefs';
+import { ChainTiers } from 'game/ChainTiers';
 import { Combat, EnemyAction } from 'game/Combat';
 import { Config, Difficulty, GameMode } from 'game/Config';
+import { Levels } from 'game/Levels';
 import { EffectKind, EffectSpec, EffectTarget, resolveEffects, unhandledEffectCount } from 'game/Effects';
 import { Settings } from 'game/Settings';
 import { Skills } from 'game/Skills';
@@ -415,13 +417,13 @@ export function runTests(): string {
 	const unhandledBefore = unhandledEffectCount();
 	const hpBeforeCharge = elite.player.hp;
 	expect(elite.enemyAct() === 0, '精英首次行动应为蓄力，不造成伤害');
-	expect(elite.lastEnemyAction === EnemyAction.Charge, '首次行动类别应为蓄力');
-	expect(elite.isCharged, '蓄力后应处于蓄力状态');
+	expect(elite.lastEnemyAction === EnemyAction.Prepare, '首次行动类别应为蓄力预告');
+	expect(elite.isPreparing, '蓄力后应处于待释放状态');
 	expect(elite.player.hp === hpBeforeCharge, '蓄力不应扣血，实际 ' + elite.player.hp);
 	const heavyDamage = elite.enemyAct();
-	expect(elite.lastEnemyAction === EnemyAction.Heavy, '第二次行动类别应为重击');
+	expect(elite.lastEnemyAction === EnemyAction.Release, '第二次行动类别应为重击释放');
 	expect(heavyDamage > elite.currentWave().attack, '重击伤害应高于普通攻击，实际 ' + heavyDamage + ' vs ' + elite.currentWave().attack);
-	expect(!elite.isCharged, '重击后应清除蓄力状态');
+	expect(!elite.isPreparing, '重击后应清除待释放状态');
 	expect(unhandledEffectCount() === unhandledBefore, 'BoardBlock 应已在执行器注册表中（悬空效果数不应增加）');
 	let eliteLocked = 0;
 	for (let row = 0; row < eliteBoard.rows; row++) {
@@ -436,7 +438,7 @@ export function runTests(): string {
 	expect(eliteBoard.isPlayable(), '重击封锁后棋盘仍应可执行');
 	expect(eliteBoard.isFull(), '重击封锁后棋盘仍应满格');
 	elite.nextStage();
-	expect(!elite.isCharged && elite.lastEnemyAction === EnemyAction.Attack, '进入新关后应复位蓄力状态');
+	expect(!elite.isPreparing && elite.lastEnemyAction === EnemyAction.Attack, '进入新关后应复位待释放状态');
 
 	// 13b. 执行器路径：BoardBlock 效果经 executeEffects 到达棋盘（而非直接调用）
 	const effectBoard = new Board();
@@ -519,6 +521,110 @@ export function runTests(): string {
 	const laneBottom = Config.NoticePlayerY - HudLayout.FontNotice * 0.75;
 	expect(laneBottom >= hintTop + 0.01 + HudLayout.FontLabel * 1.5, '我方飘字道（下沿 ' + Math.floor(laneBottom) + '）不应压到底部提示行');
 
+	// 13e. M8 关卡与敌人技能数据化：关卡注册表 + 技能轮转/冷却
+	expect(Levels.List.length === 6, '应有 6 个手工关卡，实际 ' + Levels.List.length);
+	let levelsOk = true;
+	for (const level of Levels.List) {
+		if (level.waves.length !== Config.StageWaveCount) {
+			levelsOk = false;
+		}
+		for (const wave of level.waves) {
+			if (wave.skills.length === 0) {
+				levelsOk = false;
+			}
+		}
+	}
+	expect(levelsOk, '每关应为 ' + Config.StageWaveCount + ' 波且每波至少 1 条技能');
+	const defaultWaves = Levels.Default.waves;
+	expect(defaultWaves.length === Config.Waves.length, '默认关卡波数应等于 Config.Waves');
+	let defaultEq = true;
+	for (let i = 0; i < Config.Waves.length; i++) {
+		const a = Config.Waves[i];
+		const b = defaultWaves[i];
+		if (a.hp !== b.hp || a.attack !== b.attack || a.armor !== b.armor || a.actionTurns !== b.actionTurns || a.actionSeconds !== b.actionSeconds || a.isElite !== b.isElite) {
+			defaultEq = false;
+		}
+	}
+	expect(defaultEq, '默认关卡数值应逐项等于 Config.Waves（迁移等式）');
+	const rotBoard = new Board();
+	const rot = new Combat(rotBoard, Levels.get(3));
+	rot.advanceWave();
+	expect(rot.currentWave().skills.length === 2, '第 3 关第 2 波应有 2 条技能，实际 ' + rot.currentWave().skills.length);
+	expect(rot.enemyAct() === 0, '带预告的首条技能首次行动不应造成伤害');
+	expect(rot.lastEnemyAction === EnemyAction.Prepare && rot.isPreparing, '首条技能应先进入预告状态');
+	const firstSkill = rot.lastSkillName;
+	rot.enemyAct();
+	expect(rot.lastEnemyAction === EnemyAction.Release, '预告后的下一次行动应释放技能，实际 ' + rot.lastEnemyAction);
+	expect(rot.lastSkillName === firstSkill && !rot.isPreparing, '释放的技能应与预告一致且清除预告');
+	rot.enemyAct();
+	expect(rot.lastEnemyAction === EnemyAction.Attack, '轮转应切换到本波下一条普通技能，实际 ' + rot.lastEnemyAction);
+	const cov = new Combat(new Board(), Levels.get(1));
+	const seen: string[] = [];
+	for (let i = 0; i < 12; i++) {
+		cov.enemyAct();
+		if (seen.indexOf(cov.lastSkillName) < 0) {
+			seen.push(cov.lastSkillName);
+		}
+	}
+	expect(seen.length >= 1, '连续敌人行动应至少覆盖 1 条技能');
+	expect(Levels.EndlessBase.waves.length === Config.StageWaveCount, '无尽挑战应复用最后一关的波次表');
+	expect(Levels.get(999) === Levels.List[0], '越界关卡 id 应回退到第 1 关');
+	expect(Levels.skillOf(Levels.List[0].waves[0], 999).id === 'strike', '越界技能下标应回退到普通攻击');
+
+	// 13f. M9 分阶段强化：链长四档倍率（严格递增）+ 阶段解锁额外效果
+	expect(ChainTiers.count() === 4, '链长档位应为 4 档，实际 ' + ChainTiers.count());
+	expect(ChainTiers.isStrictlyIncreasing(), '档位倍率必须严格单调递增且区间连续：' + ChainTiers.describeAll());
+	expect(ChainTiers.tierOf(2).id === ChainTiers.Contact && ChainTiers.tierOf(3).id === ChainTiers.Contact, '链长 2-3 应落在接触档');
+	expect(ChainTiers.tierOf(4).id === ChainTiers.Combo && ChainTiers.tierOf(5).id === ChainTiers.Combo, '链长 4-5 应落在连击档');
+	expect(ChainTiers.tierOf(6).id === ChainTiers.Resonance && ChainTiers.tierOf(7).id === ChainTiers.Resonance, '链长 6-7 应落在共鸣档');
+	expect(ChainTiers.tierOf(8).id === ChainTiers.Overload && ChainTiers.tierOf(999).id === ChainTiers.Overload, '链长 8+ 应落在超载档');
+	expect(ChainTiers.multiplierOf(2) === 1, '接触档倍率应为 1.0，实际 ' + ChainTiers.multiplierOf(2));
+	const specValue = (specs: EffectSpec[], kind: EffectKind, target: EffectTarget): number => {
+		for (const spec of specs) {
+			if (spec.kind === kind && spec.target === target) {
+				return spec.value;
+			}
+		}
+		return 0;
+	};
+	expect(BlockDefs.indexOf(BlockDefs.Physical) >= 0 && BlockDefs.indexOf(BlockDefs.Heal) >= 0, '注册表应包含物攻与治疗方块');
+	const physicalRules = BlockDefs.at(BlockDefs.indexOf(BlockDefs.Physical)).rules;
+	const healRules = BlockDefs.at(BlockDefs.indexOf(BlockDefs.Heal)).rules;
+	const contactSpecs = resolveEffects(physicalRules, 2);
+	const comboSpecs = resolveEffects(physicalRules, 4);
+	const resonanceSpecs = resolveEffects(physicalRules, 6);
+	const overloadSpecs = resolveEffects(physicalRules, 8);
+	// 档位倍率作用在数值条目上：先算 4+3n，再乘该链长所在档位的倍率。
+	const contactDamage = specValue(contactSpecs, EffectKind.PhysicalDamage, EffectTarget.CurrentEnemy);
+	const comboDamage = specValue(comboSpecs, EffectKind.PhysicalDamage, EffectTarget.CurrentEnemy);
+	const resonanceDamage = specValue(resonanceSpecs, EffectKind.PhysicalDamage, EffectTarget.CurrentEnemy);
+	const overloadDamage = specValue(overloadSpecs, EffectKind.PhysicalDamage, EffectTarget.CurrentEnemy);
+	expect(contactDamage === 10, '接触档物伤应为 round(4+3×2)=10，实际 ' + contactDamage);
+	expect(comboDamage === 20, '连击档物伤应为 round(16×1.25)=20，实际 ' + comboDamage);
+	expect(resonanceDamage === 35, '共鸣档物伤应为 round(22×1.6)=35，实际 ' + resonanceDamage);
+	expect(overloadDamage === 59, '超载档物伤应为 round(28×2.1)=59，实际 ' + overloadDamage);
+	expect(comboDamage > contactDamage && resonanceDamage > comboDamage && overloadDamage > resonanceDamage, '高链长档位的数值应严格更大：' + contactDamage + '/' + comboDamage + '/' + resonanceDamage + '/' + overloadDamage);
+	// 魔力规则显式 scaled=false，不受档位倍率影响：恒为 1 + 3n。
+	const comboMana = specValue(comboSpecs, EffectKind.ManaGain, EffectTarget.Self);
+	const overloadMana = specValue(overloadSpecs, EffectKind.ManaGain, EffectTarget.Self);
+	expect(comboMana === 13, '魔力不应受倍率影响，链长 4 应为 1+3×4=13，实际 ' + comboMana);
+	expect(overloadMana === 25, '魔力不应受倍率影响，链长 8 应为 1+3×8=25，实际 ' + overloadMana);
+	// 阶段解锁额外效果：破甲 6+、全体溅射 8+、净化 4+、护盾 8+。
+	expect(specValue(contactSpecs, EffectKind.DebuffArmor, EffectTarget.CurrentEnemy) === 0, '接触档不应解锁破甲');
+	expect(specValue(resonanceSpecs, EffectKind.DebuffArmor, EffectTarget.CurrentEnemy) > 0, '共鸣档应解锁破甲');
+	expect(specValue(resonanceSpecs, EffectKind.PhysicalDamage, EffectTarget.AllEnemies) === 0, '共鸣档不应有全体溅射');
+	expect(specValue(overloadSpecs, EffectKind.PhysicalDamage, EffectTarget.AllEnemies) > 0, '超载档应解锁全体溅射');
+	expect(specValue(resolveEffects(healRules, 3), EffectKind.Dispel, EffectTarget.Self) === 0, '链长 3 不应解锁净化');
+	expect(specValue(resolveEffects(healRules, 4), EffectKind.Dispel, EffectTarget.Self) > 0, '链长 4 应解锁净化');
+	expect(specValue(resolveEffects(healRules, 8), EffectKind.Shield, EffectTarget.Self) > 0, '链长 8 应解锁护盾');
+	let specsMonotonic = true;
+	for (let n = Config.MinChainLength; n < 9; n++) {
+		if (resolveEffects(physicalRules, n).length > resolveEffects(physicalRules, n + 1).length) {
+			specsMonotonic = false;
+		}
+	}
+	expect(specsMonotonic, '效果条数应随链长单调不减');
+
 	const head = failures.length === 0 ? 'passed' : 'failed';
 	const lines: string[] = [head];
 	lines.push('检查项 ' + checks + ' 项，失败 ' + failures.length + ' 项');
@@ -529,6 +635,8 @@ export function runTests(): string {
 	}
 	lines.push('200 次随机操作后：生效 ' + applied + ' 次，各类型最大连通块 ' + sizes.join(',') + '，严格上限越界 ' + strictViolations + ' 次，放宽上限告警 ' + workBoard.limitWarningCount + ' 次，无解告警 ' + workBoard.deadlockWarningCount + ' 次，强制修复 ' + workBoard.forcedRepairs + ' 次');
 	lines.push('M5 封锁/蓄力：blockCells ' + lockPlaced + ' 格，精英蓄力→重击 ' + heavyDamage + ' 伤害并封锁 ' + eliteLocked + ' 格；封锁经 ' + Config.LockDurationActions + ' 次敌人行动后自动恢复');
+	lines.push('M8 关卡：' + Levels.List.length + ' 个手工关卡，每关 ' + Config.StageWaveCount + ' 波；默认关卡数值等于 Config.Waves；第 3 关第 2 波「' + firstSkill + '」先预告后释放，轮转覆盖 ' + seen.length + ' 条技能');
+	lines.push('M9 分阶段强化：' + ChainTiers.describeAll() + '；物伤 链长2/4/6/8 = ' + contactDamage + '/' + comboDamage + '/' + resonanceDamage + '/' + overloadDamage + '；魔力不受倍率影响（链长4 = ' + comboMana + '，链长8 = ' + overloadMana + '）');
 	lines.push('M6 排版：' + viewSizes.length + ' 种窗口（含 0×0 未就绪）下最小可见区 ' + Math.floor(minHalfWidth * 2) + '×' + Math.floor(minHalfHeight * 2) + ' ≥ 安全区 ' + Config.DesignSceneWidth + '×' + Config.DesignSceneHeight + '，HUD/面板 ' + layoutRects.length + ' 个元素与棋盘均在安全区内；棋盘底边 ' + Math.floor(boardBottom) + '，提示行上沿 ' + Math.floor(hintTop) + '，对敌飘字上浮终点 ' + Math.floor(laneTop) + '（技能按钮下沿 ' + Math.floor(skillBottom) + '）');
 	for (const failure of failures) {
 		lines.push(' - ' + failure);

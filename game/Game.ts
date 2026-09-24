@@ -188,15 +188,16 @@ export class Game {
 	private enemyAct(): void {
 		const damage = this.combat.enemyAct();
 		const action = this.combat.lastEnemyAction;
-		if (action === EnemyAction.Charge) {
-			// 蓄力：本次不出手，仅预告下一次重击
-			this.hud.showNotice('精英蓄力中 — 下次行动重击', NoticeLane.Enemy, 0xffb36b);
-		} else if (action === EnemyAction.Heavy) {
+		if (action === EnemyAction.Prepare) {
+			// 预告：本次不出手，仅提示下一次将释放的技能名
+			this.hud.showNotice('敌方蓄力「' + this.combat.lastSkillName + '」 — 下次行动释放', NoticeLane.Enemy, 0xffb36b);
+		} else if (action === EnemyAction.Release) {
 			this.hud.hitPlayer(damage);
-			this.hud.showNotice('精英重击 −' + damage + '，棋盘被封锁', NoticeLane.Enemy, 0xff8a8a);
+			const lockText = this.combat.lastNewLocks > 0 ? '，封锁 ' + this.combat.lastNewLocks + ' 格' : '';
+			this.hud.showNotice('敌方「' + this.combat.lastSkillName + '」 −' + damage + lockText, NoticeLane.Enemy, 0xff8a8a);
 		} else {
 			this.hud.hitPlayer(damage);
-			this.hud.showNotice('敌方出手', NoticeLane.System, 0xffb36b);
+			this.hud.showNotice('敌方' + this.combat.lastSkillName + ' −' + damage, NoticeLane.System, 0xffb36b);
 		}
 		if (this.combat.lastExpiredLocks > 0) {
 			this.hud.showNotice('封锁自动解除 ' + this.combat.lastExpiredLocks + ' 格', NoticeLane.System, 0x9fd6ff);
